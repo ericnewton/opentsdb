@@ -1,4 +1,4 @@
-# Copyright (C) 2015  The OpenTSDB Authors.
+# Copyright (C) 2013  The OpenTSDB Authors.
 #
 # This library is free software: you can redistribute it and/or modify it
 # under the terms of the GNU Lesser General Public License as published
@@ -13,14 +13,11 @@
 # You should have received a copy of the GNU Lesser General Public License
 # along with this library.  If not, see <http://www.gnu.org/licenses/>.
 
- # You should have received a copy of the GNU Lesser General Public License
- #  # along with this library.  If not, see <http://www.gnu.org/licenses/>.
+HADOOP_COMMON_LANG_VERSION := 2.4
+HADOOP_COMMON_LANG := third_party/commons-lang/commons-lang-$(HADOOP_COMMON_LANG_VERSION).jar
+HADOOP_COMMON_LANG_BASE_URL := http://search.maven.org/remotecontent?filepath=commons-lang/commons-lang/$(HADOOP_COMMON_LANG_VERSION)
 
-ZOOKEEPER_VERSION := 3.4.6
-ZOOKEEPER := third_party/zookeeper/zookeeper-$(ZOOKEEPER_VERSION).jar
-ZOOKEEPER_BASE_URL := http://central.maven.org/maven2/org/apache/zookeeper/zookeeper/$(ZOOKEEPER_VERSION)
+$(HADOOP_COMMON_LANG): $(HADOOP_COMMON_LANG).md5
+	set dummy "$(HADOOP_COMMON_LANG_BASE_URL)" "$(HADOOP_COMMON_LANG)"; shift; $(FETCH_DEPENDENCY)
 
-$(ZOOKEEPER): $(ZOOKEEPER).md5
-	set dummy "$(ZOOKEEPER_BASE_URL)" "$(ZOOKEEPER)"; shift; $(FETCH_DEPENDENCY)
-
-THIRD_PARTY += $(ZOOKEEPER)
+THIRD_PARTY += $(HADOOP_COMMON_LANG)

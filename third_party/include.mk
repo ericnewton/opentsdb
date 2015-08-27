@@ -21,7 +21,7 @@ THIRD_PARTY =
 include third_party/guava/include.mk
 include third_party/gwt/include.mk
 include third_party/hamcrest/include.mk
-include third_party/hbase/include.mk
+#include third_party/hbase/include.mk
 include third_party/jackson/include.mk
 include third_party/javassist/include.mk
 include third_party/junit/include.mk
@@ -36,3 +36,19 @@ include third_party/suasync/include.mk
 include third_party/validation-api/include.mk
 include third_party/zookeeper/include.mk
 include third_party/apache/include.mk
+include third_party/thrift/include.mk
+
+include third_party/accumulo/include.mk
+include third_party/accumulo-fate/include.mk
+include third_party/accumulo-opentsdb/include.mk
+include third_party/accumulo-trace/include.mk
+include third_party/commons-config/include.mk
+include third_party/commons-lang/include.mk
+include third_party/commons-logging/include.mk
+include third_party/commons-collection/include.mk
+include third_party/commons-io/include.mk
+include third_party/curator-client/include.mk
+include third_party/curator-framework/include.mk
+include third_party/curator-recipes/include.mk
+include third_party/hadoop-common/include.mk
+

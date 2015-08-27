@@ -972,10 +972,10 @@ final class TsdbQuery implements Query {
     final short tagsize = (short) (name_width + value_width);
     // Generate a regexp for our tags.  Say we have 2 tags: { 0 0 1 0 0 2 }
     // and { 4 5 6 9 8 7 }, the regexp will be:
-    // "^.{7}(?:.{6})*\\Q\000\000\001\000\000\002\\E(?:.{6})*\\Q\004\005\006\011\010\007\\E(?:.{6})*$"
+    // "^.{7}(?:.{6})*\\x00\\x00\\x01\\x00\\x00\\x02(?:.{6})*\\x04\\x05\\x06\\x11\\x10\\x07(?:.{6})*$"
     final StringBuilder buf = new StringBuilder(
         15  // "^.{N}" + "(?:.{M})*" + "$"
-        + ((13 + tagsize) // "(?:.{M})*\\Q" + tagsize bytes + "\\E"
+        + ((11 + tagsize * 4) // "(?:.{M})*" + tagsize bytes + 
            * ((row_key_literals == null ? 0 : row_key_literals.size()) + 
                (group_bys == null ? 0 : group_bys.size() * 3))));
     // In order to avoid re-allocations, reserve a bit more w/ groups ^^^
@@ -1005,7 +1005,6 @@ final class TsdbQuery implements Query {
         // results
         buf.append("(?!");
       }
-      buf.append("\\Q");
       
       addId(buf, entry.getKey());
       if (entry.getValue() != null && entry.getValue().length > 0) {  // Add a group_by.
@@ -1015,7 +1014,6 @@ final class TsdbQuery implements Query {
           if (value_id == null) {
             continue;
           }
-          buf.append("\\Q");
           addId(buf, value_id);
           buf.append('|');
         }
@@ -1097,11 +1095,11 @@ final class TsdbQuery implements Query {
     // Generate a regexp for our tags based on any metric and timestamp (since
     // those are handled by the row start/stop) and the list of TSUID tagk/v
     // pairs. The generated regex will look like: ^.{7}(tags|tags|tags)$
-    // where each "tags" is similar to \\Q\000\000\001\000\000\002\\E
+    // where each "tags" is similar to \x00\x00\x01\x00\x00\x02
     final StringBuilder buf = new StringBuilder(
         13  // "(?s)^.{N}(" + ")$"
-        + (tsuids.size() * 11) // "\\Q" + "\\E|"
-        + tags_length); // total # of bytes in tsuids tagk/v pairs
+        + tsuids.size() - 1 // the | 
+        + tags_length * 4); // encoding of total # of bytes in tsuids tagk/v pairs
     
     // Alright, let's build this regexp.  From the beginning...
     buf.append("(?s)"  // Ensure we use the DOTALL flag.
@@ -1112,7 +1110,6 @@ final class TsdbQuery implements Query {
     
     for (final byte[] tags : uids) {
        // quote the bytes
-      buf.append("\\Q");
       addId(buf, tags);
       buf.append('|');
     }
@@ -1127,18 +1124,9 @@ final class TsdbQuery implements Query {
    * Appends the given ID to the given buffer, followed by "\\E".
    */
   private static void addId(final StringBuilder buf, final byte[] id) {
-    boolean backslash = false;
     for (final byte b : id) {
-      buf.append((char) (b & 0xFF));
-      if (b == 'E' && backslash) {  // If we saw a `\' and now we have a `E'.
-        // So we just terminated the quoted section because we just added \E
-        // to `buf'.  So let's put a litteral \E now and start quoting again.
-        buf.append("\\\\E\\Q");
-      } else {
-        backslash = b == '\\';
-      }
+      buf.append(String.format("\\x%02x", b & 0xFF));
     }
-    buf.append("\\E");
   }
 
   @Override

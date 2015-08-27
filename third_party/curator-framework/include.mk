@@ -1,4 +1,4 @@
-# Copyright (C) 2015  The OpenTSDB Authors.
+# Copyright (C) 2013  The OpenTSDB Authors.
 #
 # This library is free software: you can redistribute it and/or modify it
 # under the terms of the GNU Lesser General Public License as published
@@ -13,14 +13,11 @@
 # You should have received a copy of the GNU Lesser General Public License
 # along with this library.  If not, see <http://www.gnu.org/licenses/>.
 
- # You should have received a copy of the GNU Lesser General Public License
- #  # along with this library.  If not, see <http://www.gnu.org/licenses/>.
+CURATOR_CLIENT_VERSION := 2.1.0-incubating
+CURATOR_CLIENT := third_party/curator-framework/curator-framework-$(CURATOR_CLIENT_VERSION).jar
+CURATOR_CLIENT_BASE_URL := http://search.maven.org/remotecontent?filepath=org/apache/curator/curator-framework/$(CURATOR_CLIENT_VERSION)
 
-ZOOKEEPER_VERSION := 3.4.6
-ZOOKEEPER := third_party/zookeeper/zookeeper-$(ZOOKEEPER_VERSION).jar
-ZOOKEEPER_BASE_URL := http://central.maven.org/maven2/org/apache/zookeeper/zookeeper/$(ZOOKEEPER_VERSION)
+$(CURATOR_CLIENT): $(CURATOR_CLIENT).md5
+	set dummy "$(CURATOR_CLIENT_BASE_URL)" "$(CURATOR_CLIENT)"; shift; $(FETCH_DEPENDENCY)
 
-$(ZOOKEEPER): $(ZOOKEEPER).md5
-	set dummy "$(ZOOKEEPER_BASE_URL)" "$(ZOOKEEPER)"; shift; $(FETCH_DEPENDENCY)
-
-THIRD_PARTY += $(ZOOKEEPER)
+THIRD_PARTY += $(CURATOR_CLIENT)

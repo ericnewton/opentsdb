@@ -377,9 +377,9 @@
     </dependency>
 
     <dependency>
-      <groupId>org.hbase</groupId>
-      <artifactId>asynchbase</artifactId>
-      <version>@ASYNCHBASE_VERSION@</version>
+      <groupId>org.apache.accumulo</groupId>
+      <artifactId>accumulo-opentsdb</artifactId>
+      <version>@ACCUMULO_OPENTSDB_VERSION@</version>
     </dependency>
 
     <dependency>
@@ -406,6 +406,36 @@
       <groupId>ch.qos.logback</groupId>
       <artifactId>logback-classic</artifactId>
       <version>@LOGBACK_CLASSIC_VERSION@</version>
+    </dependency>
+
+    <dependency>
+      <groupId>org.apache.hadoop</groupId>
+      <artifactId>hadoop-common</artifactId>
+      <version>@HADOOP_COMMON_VERSION@</version>
+    </dependency>
+
+    <dependency>
+      <groupId>org.apache.accumulo</groupId>
+      <artifactId>accumulo-core</artifactId>
+      <version>@ACCUMULO_VERSION@</version>
+    </dependency>
+
+    <dependency>
+      <groupId>org.apache.curator</groupId>
+      <artifactId>curator-recipes</artifactId>
+      <version>@CURATOR_RECIPES_VERSION@</version>
+    </dependency>
+
+    <dependency>
+      <groupId>org.apache.curator</groupId>
+      <artifactId>curator-client</artifactId>
+      <version>@CURATOR_CLIENT_VERSION@</version>
+    </dependency>
+
+    <dependency>
+      <groupId>org.apache.curator</groupId>
+      <artifactId>curator-framework</artifactId>
+      <version>@CURATOR_FRAMEWORK_VERSION@</version>
     </dependency>
 
     <!-- test dependencies -->
