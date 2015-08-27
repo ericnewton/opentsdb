@@ -13,7 +13,7 @@
 # You should have received a copy of the GNU Lesser General Public License
 # along with this library.  If not, see <http://www.gnu.org/licenses/>.
 
-ACCUMULO_VERSION := 1.5.0
+ACCUMULO_VERSION := 1.6.3
 ACCUMULO := third_party/accumulo/accumulo-core-$(ACCUMULO_VERSION).jar
 ACCUMULO_BASE_URL := http://search.maven.org/remotecontent?filepath=org/apache/accumulo/accumulo-core/$(ACCUMULO_VERSION)
 
