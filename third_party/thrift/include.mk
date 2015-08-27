@@ -13,7 +13,7 @@
 # You should have received a copy of the GNU Lesser General Public License
 # along with this library.  If not, see <http://www.gnu.org/licenses/>.
 
-THRIFT_VERSION := 0.9.3
+THRIFT_VERSION := 0.9.1
 THRIFT := third_party/thrift/libthrift-$(THRIFT_VERSION).jar
 THRIFT_BASE_URL := http://search.maven.org/remotecontent?filepath=org/apache/thrift/libthrift/$(THRIFT_VERSION)
 
