@@ -415,6 +415,12 @@
     </dependency>
 
     <dependency>
+      <groupId>org.apache.htrace</groupId>
+      <artifactId>htrace-core</artifactId>
+      <version>@HTRACE_VERSION@</version>
+    </dependency>
+
+    <dependency>
       <groupId>org.apache.accumulo</groupId>
       <artifactId>accumulo-core</artifactId>
       <version>@ACCUMULO_VERSION@</version>

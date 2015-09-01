@@ -13,11 +13,11 @@
 # You should have received a copy of the GNU Lesser General Public License
 # along with this library.  If not, see <http://www.gnu.org/licenses/>.
 
-ACCUMULO_VERSION := 1.7.0
-ACCUMULO := third_party/accumulo/accumulo-core-$(ACCUMULO_VERSION).jar
-ACCUMULO_BASE_URL := http://search.maven.org/remotecontent?filepath=org/apache/accumulo/accumulo-core/$(ACCUMULO_VERSION)
+HTRACE_VERSION := 3.1.0-incubating
+HTRACE := third_party/htrace-core/htrace-core-$(HTRACE_VERSION).jar
+HTRACE_BASE_URL := http://search.maven.org/remotecontent?filepath=org/apache/htrace/htrace-core/$(HTRACE_VERSION)
 
-$(ACCUMULO): $(ACCUMULO).md5
-	set dummy "$(ACCUMULO_BASE_URL)" "$(ACCUMULO)"; shift; $(FETCH_DEPENDENCY)
+$(HTRACE): $(HTRACE).md5
+	set dummy "$(HTRACE_BASE_URL)" "$(HTRACE)"; shift; $(FETCH_DEPENDENCY)
 
-THIRD_PARTY += $(ACCUMULO)
+THIRD_PARTY += $(HTRACE)

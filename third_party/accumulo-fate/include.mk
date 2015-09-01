@@ -13,7 +13,7 @@
 # You should have received a copy of the GNU Lesser General Public License
 # along with this library.  If not, see <http://www.gnu.org/licenses/>.
 
-ACCUMULO_FATE_VERSION := 1.6.3
+ACCUMULO_FATE_VERSION := 1.7.0
 ACCUMULO_FATE := third_party/accumulo-fate/accumulo-fate-$(ACCUMULO_FATE_VERSION).jar
 ACCUMULO_FATE_BASE_URL := http://search.maven.org/remotecontent?filepath=org/apache/accumulo/accumulo-fate/$(ACCUMULO_FATE_VERSION)
 
