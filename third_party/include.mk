@@ -21,7 +21,6 @@ THIRD_PARTY =
 include third_party/guava/include.mk
 include third_party/gwt/include.mk
 include third_party/hamcrest/include.mk
-#include third_party/hbase/include.mk
 include third_party/jackson/include.mk
 include third_party/javassist/include.mk
 include third_party/junit/include.mk
@@ -51,4 +50,5 @@ include third_party/curator-client/include.mk
 include third_party/curator-framework/include.mk
 include third_party/curator-recipes/include.mk
 include third_party/hadoop-common/include.mk
+include third_party/htrace-core/include.mk
 

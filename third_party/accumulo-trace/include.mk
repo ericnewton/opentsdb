@@ -13,7 +13,7 @@
 # You should have received a copy of the GNU Lesser General Public License
 # along with this library.  If not, see <http://www.gnu.org/licenses/>.
 
-ACCUMULO_TRACE_VERSION := 1.6.3
+ACCUMULO_TRACE_VERSION := 1.7.0
 ACCUMULO_TRACE := third_party/accumulo-trace/accumulo-trace-$(ACCUMULO_TRACE_VERSION).jar
 ACCUMULO_TRACE_BASE_URL := http://search.maven.org/remotecontent?filepath=org/apache/accumulo/accumulo-trace/$(ACCUMULO_TRACE_VERSION)
 
