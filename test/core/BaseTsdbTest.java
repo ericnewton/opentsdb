@@ -21,6 +21,8 @@ import static org.powermock.api.mockito.PowerMockito.mock;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.TimeUnit;
 
 import net.opentsdb.meta.Annotation;
 import net.opentsdb.storage.MockBase;
@@ -32,8 +34,12 @@ import net.opentsdb.utils.Config;
 import org.hbase.async.HBaseClient;
 import org.hbase.async.Scanner;
 import org.jboss.netty.util.HashedWheelTimer;
+import org.jboss.netty.util.Timeout;
+import org.jboss.netty.util.TimerTask;
 import org.junit.Before;
 import org.junit.runner.RunWith;
+import org.mockito.invocation.InvocationOnMock;
+import org.mockito.stubbing.Answer;
 import org.powermock.api.mockito.PowerMockito;
 import org.powermock.core.classloader.annotations.PowerMockIgnore;
 import org.powermock.core.classloader.annotations.PrepareForTest;
@@ -121,20 +127,44 @@ public class BaseTsdbTest {
   void setupMetricMaps() {
     when(metrics.getId(METRIC_STRING)).thenReturn(METRIC_BYTES);
     when(metrics.getIdAsync(METRIC_STRING))
-      .thenReturn(Deferred.fromResult(METRIC_BYTES));
+      .thenAnswer(new Answer<Deferred<byte[]>>() {
+          @Override
+          public Deferred<byte[]> answer(InvocationOnMock invocation)
+              throws Throwable {
+            return Deferred.fromResult(METRIC_BYTES);
+          }
+      });
     when(metrics.getOrCreateId(METRIC_STRING))
       .thenReturn(METRIC_BYTES);
     
     when(metrics.getId(METRIC_B_STRING)).thenReturn(METRIC_B_BYTES);
     when(metrics.getIdAsync(METRIC_B_STRING))
-      .thenReturn(Deferred.fromResult(METRIC_B_BYTES));
+      .thenAnswer(new Answer<Deferred<byte[]>>() {
+          @Override
+          public Deferred<byte[]> answer(InvocationOnMock invocation)
+              throws Throwable {
+            return Deferred.fromResult(METRIC_B_BYTES);
+          }
+      });
     when(metrics.getOrCreateId(METRIC_B_STRING))
       .thenReturn(METRIC_B_BYTES);
     
     when(metrics.getNameAsync(METRIC_BYTES))
-      .thenReturn(Deferred.fromResult(METRIC_STRING));
+      .thenAnswer(new Answer<Deferred<String>>() {
+          @Override
+          public Deferred<String> answer(InvocationOnMock invocation)
+              throws Throwable {
+            return Deferred.fromResult(METRIC_STRING);
+          }
+      });
     when(metrics.getNameAsync(METRIC_B_BYTES))
-      .thenReturn(Deferred.fromResult(METRIC_B_STRING));
+      .thenAnswer(new Answer<Deferred<String>>() {
+            @Override
+            public Deferred<String> answer(InvocationOnMock invocation)
+                throws Throwable {
+              return Deferred.fromResult(METRIC_B_STRING);
+            }
+        });
     when(metrics.getNameAsync(NSUI_METRIC))
       .thenThrow(new NoSuchUniqueId("metrics", NSUI_METRIC));
     
@@ -150,21 +180,45 @@ public class BaseTsdbTest {
     when(tag_names.getId(TAGK_STRING)).thenReturn(TAGK_BYTES);
     when(tag_names.getOrCreateId(TAGK_STRING)).thenReturn(TAGK_BYTES);
     when(tag_names.getIdAsync(TAGK_STRING))
-      .thenReturn(Deferred.fromResult(TAGK_BYTES));
+      .thenAnswer(new Answer<Deferred<byte[]>>() {
+            @Override
+            public Deferred<byte[]> answer(InvocationOnMock invocation)
+                throws Throwable {
+              return Deferred.fromResult(TAGK_BYTES);
+            }
+        });
     when(tag_names.getOrCreateIdAsync(TAGK_STRING))
       .thenReturn(Deferred.fromResult(TAGK_BYTES));
     
     when(tag_names.getId(TAGK_B_STRING)).thenReturn(TAGK_B_BYTES);
     when(tag_names.getOrCreateId(TAGK_B_STRING)).thenReturn(TAGK_B_BYTES);
     when(tag_names.getIdAsync(TAGK_B_STRING))
-      .thenReturn(Deferred.fromResult(TAGK_B_BYTES));
+      .thenAnswer(new Answer<Deferred<byte[]>>() {
+            @Override
+            public Deferred<byte[]> answer(InvocationOnMock invocation)
+                throws Throwable {
+              return Deferred.fromResult(TAGK_B_BYTES);
+            }
+        });
     when(tag_names.getOrCreateIdAsync(TAGK_B_STRING))
       .thenReturn(Deferred.fromResult(TAGK_B_BYTES));
     
     when(tag_names.getNameAsync(TAGK_BYTES))
-      .thenReturn(Deferred.fromResult(TAGK_STRING));
+      .thenAnswer(new Answer<Deferred<String>>() {
+            @Override
+            public Deferred<String> answer(InvocationOnMock invocation)
+                throws Throwable {
+              return Deferred.fromResult(TAGK_STRING);
+            }
+        });
     when(tag_names.getNameAsync(TAGK_B_BYTES))
-      .thenReturn(Deferred.fromResult(TAGK_B_STRING));
+      .thenAnswer(new Answer<Deferred<String>>() {
+            @Override
+            public Deferred<String> answer(InvocationOnMock invocation)
+                throws Throwable {
+              return Deferred.fromResult(TAGK_B_STRING);
+            }
+        });
     when(tag_names.getNameAsync(NSUI_TAGK))
       .thenThrow(new NoSuchUniqueId("tagk", NSUI_TAGK));
     
@@ -180,14 +234,26 @@ public class BaseTsdbTest {
     when(tag_values.getId(TAGV_STRING)).thenReturn(TAGV_BYTES);
     when(tag_values.getOrCreateId(TAGV_STRING)).thenReturn(TAGV_BYTES);
     when(tag_values.getIdAsync(TAGV_STRING))
-      .thenReturn(Deferred.fromResult(TAGV_BYTES));
+      .thenAnswer(new Answer<Deferred<byte[]>>() {
+          @Override
+          public Deferred<byte[]> answer(InvocationOnMock invocation)
+              throws Throwable {
+            return Deferred.fromResult(TAGV_BYTES);
+          }
+      });
     when(tag_values.getOrCreateIdAsync(TAGV_STRING))
       .thenReturn(Deferred.fromResult(TAGV_BYTES));
   
     when(tag_values.getId(TAGV_B_STRING)).thenReturn(TAGV_B_BYTES);
     when(tag_values.getOrCreateId(TAGV_B_STRING)).thenReturn(TAGV_B_BYTES);
     when(tag_values.getIdAsync(TAGV_B_STRING))
-      .thenReturn(Deferred.fromResult(TAGV_B_BYTES));
+      .thenAnswer(new Answer<Deferred<byte[]>>() {
+            @Override
+            public Deferred<byte[]> answer(InvocationOnMock invocation)
+                throws Throwable {
+              return Deferred.fromResult(TAGV_B_BYTES);
+            }
+        });
     when(tag_values.getOrCreateIdAsync(TAGV_B_STRING))
       .thenReturn(Deferred.fromResult(TAGV_B_BYTES));
     
@@ -459,4 +525,62 @@ public class BaseTsdbTest {
     note.syncToStorage(tsdb, false).joinUninterruptibly();
   }
 
+  /**
+   * A fake {@link org.jboss.netty.util.Timer} implementation.
+   * Instead of executing the task it will store that task in a internal state
+   * and provides a function to start the execution of the stored task.
+   * This implementation thus allows the flexibility of simulating the
+   * things that will be going on during the time out period of a TimerTask.
+   * This was mainly return to simulate the timeout period for
+   * alreadyNSREdRegion test, where the region will be in the NSREd mode only
+   * during this timeout period, which was difficult to simulate using the
+   * above {@link FakeTimer} implementation, as we don't get back the control
+   * during the timeout period
+   *
+   * Here it will hold at most two Tasks. We have two tasks here because when
+   * one is being executed, it may call for newTimeOut for another task.
+   */
+  public static final class FakeTaskTimer extends HashedWheelTimer {
+
+    public TimerTask newPausedTask = null;
+    public TimerTask pausedTask = null;
+    public Timeout timeout = null;
+
+    @Override
+    public synchronized Timeout newTimeout(final TimerTask task,
+                                           final long delay,
+                                           final TimeUnit unit) {
+      if (pausedTask == null) {
+        pausedTask = task;
+      }  else if (newPausedTask == null) {
+        newPausedTask = task;
+      } else {
+        throw new IllegalStateException("Cannot Pause Two Timer Tasks");
+      }
+      timeout = mock(Timeout.class);
+      return timeout;
+    }
+
+    @Override
+    public Set<Timeout> stop() {
+      return null;
+    }
+
+    public boolean continuePausedTask() {
+      if (pausedTask == null) {
+        return false;
+      }
+      try {
+        if (newPausedTask != null) {
+          throw new IllegalStateException("Cannot be in this state");
+        }
+        pausedTask.run(null);  // Argument never used in this code base
+        pausedTask = newPausedTask;
+        newPausedTask = null;
+        return true;
+      } catch (Exception e) {
+        throw new RuntimeException("Timer task failed: " + pausedTask, e);
+      }
+    }
+  }
 }

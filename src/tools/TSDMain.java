@@ -12,18 +12,21 @@
 // see <http://www.gnu.org/licenses/>.
 package net.opentsdb.tools;
 
-import java.io.File;
 import java.io.IOException;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
+import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
 
 import org.jboss.netty.bootstrap.ServerBootstrap;
 import org.jboss.netty.channel.socket.ServerSocketChannelFactory;
+import org.jboss.netty.channel.socket.nio.NioServerBossPool;
 import org.jboss.netty.channel.socket.nio.NioServerSocketChannelFactory;
+import org.jboss.netty.channel.socket.nio.NioWorkerPool;
 import org.jboss.netty.channel.socket.oio.OioServerSocketChannelFactory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
 import net.opentsdb.tools.BuildData;
 import net.opentsdb.core.TSDB;
 import net.opentsdb.core.Const;
@@ -31,7 +34,8 @@ import net.opentsdb.tsd.PipelineFactory;
 import net.opentsdb.tsd.RpcManager;
 import net.opentsdb.utils.Config;
 import net.opentsdb.utils.FileSystem;
-import net.opentsdb.graph.Plot;
+import net.opentsdb.utils.Threads;
+
 /**
  * Main class of the TSD, the Time Series Daemon.
  */
@@ -130,17 +134,24 @@ final class TSDMain {
           usage(argp, "Invalid worker thread count", 1);
         }
       }
-      factory = new NioServerSocketChannelFactory(
-          Executors.newCachedThreadPool(), Executors.newCachedThreadPool(),
-          workers);
+      final Executor executor = Executors.newCachedThreadPool();
+      final NioServerBossPool boss_pool = 
+          new NioServerBossPool(executor, 1, new Threads.BossThreadNamer());
+      final NioWorkerPool worker_pool = new NioWorkerPool(executor, 
+          workers, new Threads.WorkerThreadNamer());
+      factory = new NioServerSocketChannelFactory(boss_pool, worker_pool);
     } else {
       factory = new OioServerSocketChannelFactory(
-          Executors.newCachedThreadPool(), Executors.newCachedThreadPool());
+          Executors.newCachedThreadPool(), Executors.newCachedThreadPool(), 
+          new Threads.PrependThreadNamer());
     }
     
     try {
       tsdb = new TSDB(config);
       tsdb.initializePlugins(true);
+      if (config.getBoolean("tsd.storage.hbase.prefetch_meta")) {
+        tsdb.preFetchHBaseMeta();
+      }
       
       // Make sure we don't even start if we can't find our tables.
       tsdb.checkNecessaryTablesExist().joinUninterruptibly();

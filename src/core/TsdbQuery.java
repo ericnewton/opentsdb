@@ -23,11 +23,11 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeMap;
-import java.util.Map.Entry;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.hbase.async.Bytes;
+import org.hbase.async.DeleteRequest;
 import org.hbase.async.HBaseException;
 import org.hbase.async.KeyValue;
 import org.hbase.async.Scanner;
@@ -38,6 +38,7 @@ import com.stumbleupon.async.Callback;
 import com.stumbleupon.async.Deferred;
 import com.stumbleupon.async.DeferredGroupException;
 
+import net.opentsdb.query.QueryUtil;
 import net.opentsdb.query.filter.TagVFilter;
 import net.opentsdb.stats.Histogram;
 import net.opentsdb.uid.NoSuchUniqueId;
@@ -79,10 +80,16 @@ final class TsdbQuery implements Query {
 
   /** End time (UNIX timestamp in seconds) on 32 bits ("unsigned" int). */
   private long end_time = UNSET;
+  
+  /** Whether or not to delete the queried data */
+  private boolean delete;
 
   /** ID of the metric being looked up. */
   private byte[] metric;
-
+  
+  /** Row key regex to pass to HBase if we have tags or TSUIDs */
+  private String regex;
+  
   /**
    * Tags by which we must group the results.
    * Each element is a tag ID.
@@ -192,7 +199,17 @@ final class TsdbQuery implements Query {
     }
     return end_time;
   }
-
+  
+  @Override
+  public void setDelete(boolean delete) {
+    this.delete = delete;
+  }
+  
+  @Override
+  public boolean getDelete() {
+    return delete;
+  }
+  
   @Override
   public void setTimeSeries(final String metric,
       final Map<String, String> tags,
@@ -294,6 +311,7 @@ final class TsdbQuery implements Query {
     final TSSubQuery sub_query = query.getQueries().get(index);
     setStartTime(query.startTime());
     setEndTime(query.endTime());
+    setDelete(query.getDelete());
     query_index = index;
     
     // set common options
@@ -362,7 +380,6 @@ final class TsdbQuery implements Query {
     }
   }
   
-  
   @Override
   public void downsample(final long interval, final Aggregator downsampler,
       final FillPolicy fill_policy) {
@@ -412,7 +429,6 @@ final class TsdbQuery implements Query {
       final ByteMap<Void> literals = new ByteMap<Void>();
       final List<TagVFilter> literal_filters = new ArrayList<TagVFilter>();
       TagVFilter current = null;
-      boolean not_key = false;
       do { // yeah, I'm breakin out the do!!!
         current = current_iterator.next();
         if (tagk == null) {
@@ -429,9 +445,6 @@ final class TsdbQuery implements Query {
           }
           literal_filters.add(current);
         }
-        if (current.isNotKeyFilter()) {
-          not_key = true;
-        }
 
         if (next != null && Bytes.memcmp(tagk, next.getTagkBytes()) != 0) {
           break;
@@ -440,21 +453,14 @@ final class TsdbQuery implements Query {
       } while (current_iterator.hasNext() && 
           Bytes.memcmp(tagk, current.getTagkBytes()) == 0);
 
-      if (gbs > 0 && !not_key) {
+      if (gbs > 0) {
         if (group_bys == null) {
           group_bys = new ArrayList<byte[]>();
         }
         group_bys.add(current.getTagkBytes());
       }
       
-      if (not_key) {
-        // special value to notify the row key regex builder that we don't want
-        // rows with this tagk
-        row_key_literals.put(current.getTagkBytes(), new byte[0][]);
-      } else if (literals.size() > 0) {
-        // TODO - a good optimization would be to remove the filter from the
-        // list passed to the scanner since we'll have it in the regex. However 
-        // that would then "OR" the literal filters
+      if (literals.size() > 0) {
         if (literals.size() + row_key_literals_count > 
             tsdb.getConfig().getInt("tsd.query.filter.expansion_limit")) {
           LOG.debug("Skipping literals for " + current.getTagk() + 
@@ -701,6 +707,11 @@ final class TsdbQuery implements Query {
         * @param row The row to add
         */
        void processRow(final byte[] key, final ArrayList<KeyValue> row) {
+         if (delete) {
+           final DeleteRequest del = new DeleteRequest(tsdb.dataTable(), key);
+           tsdb.getClient().delete(del);
+         }
+         
          Span datapoints = spans.get(key);
          if (datapoints == null) {
            datapoints = new Span(tsdb);
@@ -833,14 +844,12 @@ final class TsdbQuery implements Query {
    */
   protected Scanner getScanner(final int salt_bucket) throws HBaseException {
     final short metric_width = tsdb.metrics.width();
-    final int metric_salt_width = metric_width + Const.SALT_WIDTH();
-    final byte[] start_row = new byte[metric_salt_width + Const.TIMESTAMP_BYTES];
-    final byte[] end_row = new byte[metric_salt_width + Const.TIMESTAMP_BYTES];
     
-    if (Const.SALT_WIDTH() > 0) {
-      final byte[] salt = RowKey.getSaltBytes(salt_bucket);
-      System.arraycopy(salt, 0, start_row, 0, Const.SALT_WIDTH());
-      System.arraycopy(salt, 0, end_row, 0, Const.SALT_WIDTH());
+    // set the metric UID based on the TSUIDs if given, or the metric UID
+    if (tsuids != null && !tsuids.isEmpty()) {
+      final String tsuid = tsuids.get(0);
+      final String metric_uid = tsuid.substring(0, metric_width * 2);
+      metric = UniqueId.stringToUid(metric_uid);
     }
     
     // We search at least one row before and one row after the start & end
@@ -849,33 +858,15 @@ final class TsdbQuery implements Query {
     // rely on having a few extra data points before & after the exact start
     // & end dates in order to do proper rate calculation or downsampling near
     // the "edges" of the graph.
-    Bytes.setInt(start_row, (int) getScanStartTimeSeconds(), metric_salt_width);
-    Bytes.setInt(end_row, (end_time == UNSET
-                           ? -1  // Will scan until the end (0xFFF...).
-                           : (int) getScanEndTimeSeconds()),
-                           metric_salt_width);
-    
-    // set the metric UID based on the TSUIDs if given, or the metric UID
-    if (tsuids != null && !tsuids.isEmpty()) {
-      final String tsuid = tsuids.get(0);
-      final String metric_uid = tsuid.substring(0, metric_width * 2);
-      metric = UniqueId.stringToUid(metric_uid);
-      System.arraycopy(metric, 0, start_row, Const.SALT_WIDTH(), metric_width);
-      System.arraycopy(metric, 0, end_row, Const.SALT_WIDTH(), metric_width); 
-    } else {
-      System.arraycopy(metric, 0, start_row, Const.SALT_WIDTH(), metric_width);
-      System.arraycopy(metric, 0, end_row, Const.SALT_WIDTH(), metric_width);
-    }
-    
-    final Scanner scanner = tsdb.client.newScanner(tsdb.table);
-    scanner.setStartKey(start_row);
-    scanner.setStopKey(end_row);
+    final Scanner scanner = QueryUtil.getMetricScanner(tsdb, salt_bucket, metric, 
+        (int) getScanStartTimeSeconds(), end_time == UNSET
+        ? -1  // Will scan until the end (0xFFF...).
+        : (int) getScanEndTimeSeconds(), tsdb.table, TSDB.FAMILY());
     if (tsuids != null && !tsuids.isEmpty()) {
       createAndSetTSUIDFilter(scanner);
     } else if (filters.size() > 0) {
       createAndSetFilter(scanner);
     }
-    scanner.setFamily(TSDB.FAMILY);
     return scanner;
   }
 
@@ -964,110 +955,13 @@ final class TsdbQuery implements Query {
    * @param scanner The scanner on which to add the filter.
    */
   private void createAndSetFilter(final Scanner scanner) {
-    if (group_bys != null) {
-      Collections.sort(group_bys, Bytes.MEMCMP);
+    if (regex == null) {
+      regex = QueryUtil.getRowKeyUIDRegex(group_bys, row_key_literals);
     }
-    final short name_width = tsdb.tag_names.width();
-    final short value_width = tsdb.tag_values.width();
-    final short tagsize = (short) (name_width + value_width);
-    // Generate a regexp for our tags.  Say we have 2 tags: { 0 0 1 0 0 2 }
-    // and { 4 5 6 9 8 7 }, the regexp will be:
-    // "^.{7}(?:.{6})*\\x00\\x00\\x01\\x00\\x00\\x02(?:.{6})*\\x04\\x05\\x06\\x11\\x10\\x07(?:.{6})*$"
-    final StringBuilder buf = new StringBuilder(
-        15  // "^.{N}" + "(?:.{M})*" + "$"
-        + ((11 + tagsize * 4) // "(?:.{M})*" + tagsize bytes + 
-           * ((row_key_literals == null ? 0 : row_key_literals.size()) + 
-               (group_bys == null ? 0 : group_bys.size() * 3))));
-    // In order to avoid re-allocations, reserve a bit more w/ groups ^^^
-
-    // Alright, let's build this regexp.  From the beginning...
-    buf.append("(?s)"  // Ensure we use the DOTALL flag.
-               + "^.{")
-       // ... start by skipping the salt, metric ID and timestamp.
-       .append(Const.SALT_WIDTH() + tsdb.metrics.width() + Const.TIMESTAMP_BYTES)
-       .append("}");
-
-    final Iterator<Entry<byte[], byte[][]>> it = row_key_literals == null ? 
-        new ByteMap<byte[][]>().iterator() : row_key_literals.iterator();
-
-    while(it.hasNext()) {
-      Entry<byte[], byte[][]> entry = it.hasNext() ? it.next() : null;
-      // TODO - This look ahead may be expensive. We need to get some data around
-      // whether it's faster for HBase to scan with a look ahead or simply pass
-      // the rows back to the TSD for filtering.
-      final boolean not_key = 
-          entry.getValue() != null && entry.getValue().length == 0;
-      
-      // Skip any number of tags.
-      buf.append("(?:.{").append(tagsize).append("})*");
-      if (not_key) {
-        // start the lookahead as we have a key we expliclty do not want in the
-        // results
-        buf.append("(?!");
-      }
-      
-      addId(buf, entry.getKey());
-      if (entry.getValue() != null && entry.getValue().length > 0) {  // Add a group_by.
-        // We want specific IDs.  List them: /(AAA|BBB|CCC|..)/
-        buf.append("(?:");
-        for (final byte[] value_id : entry.getValue()) {
-          if (value_id == null) {
-            continue;
-          }
-          addId(buf, value_id);
-          buf.append('|');
-        }
-        // Replace the pipe of the last iteration.
-        buf.setCharAt(buf.length() - 1, ')');
-      } else {
-        buf.append(".{").append(value_width).append('}');  // Any value ID.
-      }
-      
-      if (not_key) {
-        // be sure to close off the look ahead
-        buf.append(")");
-      }
-    }
-    // Skip any number of tags before the end.
-    buf.append("(?:.{").append(tagsize).append("})*$");
-    scanner.setKeyRegexp(buf.toString(), CHARSET);
+    scanner.setKeyRegexp(regex, CHARSET);
     if (LOG.isDebugEnabled()) {
-      logRegexScanner(buf.toString());
+      LOG.debug("Scanner regex: " + QueryUtil.byteRegexToString(regex));
     }
-  }
-
-  /**
-   * Little helper to print out the regular expression by converting the UID
-   * bytes to an array.
-   * @param regexp The regex string to print to the debug log
-   * @since 2.2
-   */
-  void logRegexScanner(final String regexp) {
-    final StringBuilder buf = new StringBuilder();
-    for (int i = 0; i < regexp.length(); i++) {
-      if (i > 0 && regexp.charAt(i - 1) == 'Q') {
-        if (regexp.charAt(i - 3) == '*') {
-          // tagk
-          byte[] tagk = new byte[TSDB.tagk_width()];
-          for (int x = 0; x < TSDB.tagk_width(); x++) {
-            tagk[x] = (byte)regexp.charAt(i + x);
-          }
-          i += TSDB.tagk_width();
-          buf.append(Arrays.toString(tagk));
-        } else {
-          // tagv
-          byte[] tagv = new byte[TSDB.tagv_width()];
-          for (int x = 0; x < TSDB.tagv_width(); x++) {
-            tagv[x] = (byte)regexp.charAt(i + x);
-          }
-          i += TSDB.tagv_width();
-          buf.append(Arrays.toString(tagv));
-        }
-      } else {
-        buf.append(regexp.charAt(i));
-      }
-    }
-    LOG.debug("Scanner regex: " + buf.toString());
   }
   
   /**
@@ -1078,57 +972,12 @@ final class TsdbQuery implements Query {
    * @since 2.0
    */
   private void createAndSetTSUIDFilter(final Scanner scanner) {
-    Collections.sort(tsuids);
-    
-    // first, convert the tags to byte arrays and count up the total length
-    // so we can allocate the string builder
-    final short metric_width = tsdb.metrics.width();
-    int tags_length = 0;
-    final ArrayList<byte[]> uids = new ArrayList<byte[]>(tsuids.size());
-    for (final String tsuid : tsuids) {
-      final String tags = tsuid.substring(metric_width * 2);
-      final byte[] tag_bytes = UniqueId.stringToUid(tags);
-      tags_length += tag_bytes.length;
-      uids.add(tag_bytes);
+    if (regex == null) {
+      regex = QueryUtil.getRowKeyTSUIDRegex(tsuids);
     }
-    
-    // Generate a regexp for our tags based on any metric and timestamp (since
-    // those are handled by the row start/stop) and the list of TSUID tagk/v
-    // pairs. The generated regex will look like: ^.{7}(tags|tags|tags)$
-    // where each "tags" is similar to \x00\x00\x01\x00\x00\x02
-    final StringBuilder buf = new StringBuilder(
-        13  // "(?s)^.{N}(" + ")$"
-        + tsuids.size() - 1 // the | 
-        + tags_length * 4); // encoding of total # of bytes in tsuids tagk/v pairs
-    
-    // Alright, let's build this regexp.  From the beginning...
-    buf.append("(?s)"  // Ensure we use the DOTALL flag.
-               + "^.{")
-       // ... start by skipping the metric ID and timestamp.
-       .append(Const.SALT_WIDTH() + tsdb.metrics.width() + Const.TIMESTAMP_BYTES)
-       .append("}(");
-    
-    for (final byte[] tags : uids) {
-       // quote the bytes
-      addId(buf, tags);
-      buf.append('|');
-    }
-    
-    // Replace the pipe of the last iteration, close and set
-    buf.setCharAt(buf.length() - 1, ')');
-    buf.append("$");
-    scanner.setKeyRegexp(buf.toString(), CHARSET);
+    scanner.setKeyRegexp(regex, CHARSET);
   }
-
-  /**
-   * Appends the given ID to the given buffer, followed by "\\E".
-   */
-  private static void addId(final StringBuilder buf, final byte[] id) {
-    for (final byte b : id) {
-      buf.append(String.format("\\x%02x", b & 0xFF));
-    }
-  }
-
+  
   @Override
   public String toString() {
     final StringBuilder buf = new StringBuilder();

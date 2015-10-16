@@ -1,3 +1,4 @@
+<<<<<<< HEAD:third_party/accumulo/include.mk
 # Copyright (C) 2013  The OpenTSDB Authors.
 #
 # This library is free software: you can redistribute it and/or modify it

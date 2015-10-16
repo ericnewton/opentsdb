@@ -19,6 +19,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import com.stumbleupon.async.Callback;
 import com.stumbleupon.async.Deferred;
@@ -36,6 +37,9 @@ import org.hbase.async.HBaseClient;
 import org.hbase.async.HBaseException;
 import org.hbase.async.KeyValue;
 import org.hbase.async.PutRequest;
+import org.jboss.netty.util.HashedWheelTimer;
+import org.jboss.netty.util.Timeout;
+import org.jboss.netty.util.Timer;
 
 import net.opentsdb.tree.TreeBuilder;
 import net.opentsdb.tsd.RTPublisher;
@@ -46,6 +50,7 @@ import net.opentsdb.uid.UniqueId.UniqueIdType;
 import net.opentsdb.utils.Config;
 import net.opentsdb.utils.DateTime;
 import net.opentsdb.utils.PluginLoader;
+import net.opentsdb.utils.Threads;
 import net.opentsdb.meta.Annotation;
 import net.opentsdb.meta.TSMeta;
 import net.opentsdb.meta.UIDMeta;
@@ -53,6 +58,7 @@ import net.opentsdb.query.filter.TagVFilter;
 import net.opentsdb.search.SearchPlugin;
 import net.opentsdb.search.SearchQuery;
 import net.opentsdb.stats.Histogram;
+import net.opentsdb.stats.QueryStats;
 import net.opentsdb.stats.StatsCollector;
 
 /**
@@ -69,11 +75,11 @@ public final class TSDB {
   /** Charset used to convert Strings to byte arrays and back. */
   private static final Charset CHARSET = Charset.forName("ISO-8859-1");
   private static final String METRICS_QUAL = "metrics";
-  private static final short METRICS_WIDTH = 3;
+  private static short METRICS_WIDTH = 3;
   private static final String TAG_NAME_QUAL = "tagk";
-  private static final short TAG_NAME_WIDTH = 3;
+  private static short TAG_NAME_WIDTH = 3;
   private static final String TAG_VALUE_QUAL = "tagv";
-  private static final short TAG_VALUE_WIDTH = 3;
+  private static short TAG_VALUE_WIDTH = 3;
 
   /** Client for the HBase cluster to use.  */
   final HBaseClient client;
@@ -97,6 +103,9 @@ public final class TSDB {
   /** Configuration object for all TSDB components */
   final Config config;
 
+  /** Timer used for various tasks such as idle timeouts or query timeouts */
+  private final HashedWheelTimer timer;
+  
   /**
    * Row keys that need to be compacted.
    * Whenever we write a new data point to a row, we add the row key to this
@@ -143,6 +152,28 @@ public final class TSDB {
       this.client = client;
     }
     
+    // SALT AND UID WIDTHS
+    // Users really wanted this to be set via config instead of having to 
+    // compile. Hopefully they know NOT to change these after writing data.
+    if (config.hasProperty("tsd.storage.uid.width.metric")) {
+      METRICS_WIDTH = config.getShort("tsd.storage.uid.width.metric");
+    }
+    if (config.hasProperty("tsd.storage.uid.width.tagk")) {
+      TAG_NAME_WIDTH = config.getShort("tsd.storage.uid.width.tagk");
+    }
+    if (config.hasProperty("tsd.storage.uid.width.tagv")) {
+      TAG_VALUE_WIDTH = config.getShort("tsd.storage.uid.width.tagv");
+    }
+    if (config.hasProperty("tsd.storage.max_tags")) {
+      Const.setMaxNumTags(config.getShort("tsd.storage.max_tags"));
+    }
+    if (config.hasProperty("tsd.storage.salt.buckets")) {
+      Const.setSaltBuckets(config.getInt("tsd.storage.salt.buckets"));
+    }
+    if (config.hasProperty("tsd.storage.salt.width")) {
+      Const.setSaltWidth(config.getInt("tsd.storage.salt.width"));
+    }
+    
     table = config.getString("tsd.storage.hbase.data_table").getBytes(CHARSET);
     uidtable = config.getString("tsd.storage.hbase.uid_table").getBytes(CHARSET);
     treetable = config.getString("tsd.storage.hbase.tree_table").getBytes(CHARSET);
@@ -157,17 +188,18 @@ public final class TSDB {
     tag_names = new UniqueId(this.client, uidtable, TAG_NAME_QUAL, TAG_NAME_WIDTH);
     tag_values = new UniqueId(this.client, uidtable, TAG_VALUE_QUAL, TAG_VALUE_WIDTH);
     compactionq = new CompactionQueue(this);
-
+    metrics.setTSDB(this);
+    tag_names.setTSDB(this);
+    tag_values.setTSDB(this);
+    
     if (config.hasProperty("tsd.core.timezone")) {
       DateTime.setDefaultTimezone(config.getString("tsd.core.timezone"));
     }
-    if (config.enable_realtime_ts() || config.enable_realtime_uid()) {
-      // this is cleaner than another constructor and defaults to null. UIDs 
-      // will be refactored with DAL code anyways
-      metrics.setTSDB(this);
-      tag_names.setTSDB(this);
-      tag_values.setTSDB(this);
-    }
+    
+    timer = Threads.newTimer("TSDB Timer");
+    
+    QueryStats.setEnableDuplicates(
+        config.getBoolean("tsd.query.allow_simultaneous_duplicates"));
     
     if (config.getBoolean("tsd.core.preload_uid_cache")) {
       final ByteMap<UniqueId> uid_cache_map = new ByteMap<UniqueId>();
@@ -373,12 +405,12 @@ public final class TSDB {
   }
   
   /**
-   * Attempts to find the UID matching a given name asynchronously
+   * Attempts to find the UID matching a given name
    * @param type The type of UID
    * @param name The name to search for
    * @throws IllegalArgumentException if the type is not valid
    * @throws NoSuchUniqueName if the name was not found
-   * @since 2.2
+   * @since 2.1
    */
   public Deferred<byte[]> getUIDAsync(final UniqueIdType type, final String name) {
     if (name == null || name.isEmpty()) {
@@ -386,11 +418,11 @@ public final class TSDB {
     }
     switch (type) {
       case METRIC:
-        return this.metrics.getIdAsync(name);
+        return metrics.getIdAsync(name);
       case TAGK:
-        return this.tag_names.getIdAsync(name);
+        return tag_names.getIdAsync(name);
       case TAGV:
-        return this.tag_values.getIdAsync(name);
+        return tag_values.getIdAsync(name);
       default:
         throw new IllegalArgumentException("Unrecognized UID type");
     }
@@ -525,6 +557,10 @@ public final class TSDB {
     collector.record("hbase.nsre", stats.noSuchRegionExceptions());
     collector.record("hbase.nsre.rpcs_delayed",
                      stats.numRpcDelayedDueToNSRE());
+    collector.record("hbase.region_clients.open",
+        stats.regionClients());
+    collector.record("hbase.region_clients.idle_closed",
+        stats.idleConnectionsClosed());
 
     compactionq.collectStats(collector);
     // Collect Stats from Plugins
@@ -847,9 +883,44 @@ public final class TSDB {
     final ArrayList<Deferred<Object>> deferreds = 
       new ArrayList<Deferred<Object>>();
     
-    final class HClientShutdown implements Callback<Object, ArrayList<Object>> {
-      public Object call(final ArrayList<Object> args) {
-        return client.shutdown();
+    final class FinalShutdown implements Callback<Object, Object> {
+      @Override
+      public Object call(Object result) throws Exception {
+        if (result instanceof Exception) {
+          LOG.error("A previous shutdown failed", (Exception)result);
+        }
+        final Set<Timeout> timeouts = timer.stop();
+        // TODO - at some point we should clean these up.
+        if (timeouts.size() > 0) {
+          LOG.warn("There were " + timeouts.size() + " timer tasks queued");
+        }
+        LOG.info("Completed shutting down the TSDB");
+        return Deferred.fromResult(null);
+      }
+    }
+    
+    final class SEHShutdown implements Callback<Object, Object> {
+      @Override
+      public Object call(Object result) throws Exception {
+        if (result instanceof Exception) {
+          LOG.error("Shutdown of the HBase client failed", (Exception)result);
+        }
+        LOG.info("Shutting down storage exception handler plugin: " + 
+            storage_exception_handler.getClass().getCanonicalName());
+        return storage_exception_handler.shutdown().addBoth(new FinalShutdown());
+      }
+      @Override
+      public String toString() {
+        return "SEHShutdown";
+      }
+    }
+    
+    final class HClientShutdown implements Callback<Deferred<Object>, ArrayList<Object>> {
+      public Deferred<Object> call(final ArrayList<Object> args) {
+        if (storage_exception_handler != null) {
+          return client.shutdown().addBoth(new SEHShutdown());
+        }
+        return client.shutdown().addBoth(new FinalShutdown());
       }
       public String toString() {
         return "shutdown HBase client";
@@ -869,7 +940,7 @@ public final class TSDB {
         } else {
           LOG.error("Failed to shutdown the TSD", e);
         }
-        return client.shutdown();
+        return new HClientShutdown().call(null);
       }
       public String toString() {
         return "shutdown HBase client after error";
@@ -904,9 +975,9 @@ public final class TSDB {
     
     // wait for plugins to shutdown before we close the client
     return deferreds.size() > 0
-      ? Deferred.group(deferreds).addCallbacks(new HClientShutdown(),
-                                               new ShutdownErrback())
-      : client.shutdown();
+      ? Deferred.group(deferreds).addCallbackDeferring(new HClientShutdown())
+          .addErrback(new ShutdownErrback())
+      : new HClientShutdown().call(null);
   }
 
   /**
@@ -1018,6 +1089,29 @@ public final class TSDB {
     } else {
       LOG.warn("Unknown type name: " + type);
       throw new IllegalArgumentException("Unknown type name");
+    }
+  }
+  
+  /**
+   * Attempts to delete the given UID name mapping from the storage table as
+   * well as the local cache.
+   * @param type The type of UID to delete. Must be "metrics", "tagk" or "tagv"
+   * @param name The name of the UID to delete
+   * @return A deferred to wait on for completion, or an exception if thrown
+   * @throws IllegalArgumentException if the type is invalid
+   * @since 2.2
+   */
+  public Deferred<Object> deleteUidAsync(final String type, final String name) {
+    final UniqueIdType uid_type = UniqueId.stringToUniqueIdType(type);
+    switch (uid_type) {
+    case METRIC:
+      return metrics.deleteAsync(name);
+    case TAGK:
+      return tag_names.deleteAsync(name);
+    case TAGV:
+      return tag_values.deleteAsync(name);
+    default:
+      throw new IllegalArgumentException("Unrecognized UID type: " + uid_type); 
     }
   }
   
@@ -1150,6 +1244,39 @@ public final class TSDB {
       LOG.error("Exception from Search plugin indexer", e);
       return null;
     }
+  }
+  
+  /**
+   * Blocks while pre-fetching meta data from the data and uid tables
+   * so that performance improves, particularly with a large number of 
+   * regions and region servers.
+   * @since 2.2
+   */
+  public void preFetchHBaseMeta() {
+    LOG.info("Pre-fetching meta data for all tables");
+    final long start = System.currentTimeMillis();
+    final ArrayList<Deferred<Object>> deferreds = new ArrayList<Deferred<Object>>();
+    deferreds.add(client.prefetchMeta(table));
+    deferreds.add(client.prefetchMeta(uidtable));
+    
+    // TODO(cl) - meta, tree, etc
+    
+    try {
+      Deferred.group(deferreds).join();
+      LOG.info("Fetched meta data for tables in " + 
+          (System.currentTimeMillis() - start) + "ms");
+    } catch (InterruptedException e) {
+      LOG.error("Interrupted", e);
+      Thread.currentThread().interrupt();
+      return;
+    } catch (Exception e) {
+      LOG.error("Failed to prefetch meta for our tables", e);
+    }
+  }
+  
+  /** @return the timer used for various house keeping functions */
+  public Timer getTimer() {
+    return timer;
   }
   
   // ------------------ //

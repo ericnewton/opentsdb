@@ -492,6 +492,7 @@ public class Config {
     default_map.put("tsd.core.uid.random_metrics", "false");
     default_map.put("tsd.query.filter.expansion_limit", "4096");
     default_map.put("tsd.query.skip_unresolved_tagvs", "false");
+    default_map.put("tsd.query.allow_simultaneous_duplicates", "false");
     default_map.put("tsd.rtpublisher.enable", "false");
     default_map.put("tsd.rtpublisher.plugin", "");
     default_map.put("tsd.search.enable", "false");
@@ -505,6 +506,7 @@ public class Config {
     default_map.put("tsd.storage.hbase.meta_table", "tsdb-meta");
     default_map.put("tsd.storage.hbase.zk_quorum", "localhost");
     default_map.put("tsd.storage.hbase.zk_basedir", "/hbase");
+    default_map.put("tsd.storage.hbase.prefetch_meta", "false");
     default_map.put("tsd.storage.enable_appends", "false");
     default_map.put("tsd.storage.repair_appends", "false");
     default_map.put("tsd.storage.enable_compaction", "true");
@@ -513,6 +515,7 @@ public class Config {
     default_map.put("tsd.storage.compaction.max_concurrent_flushes", "10000");
     default_map.put("tsd.storage.compaction.flush_speed", "2");
     default_map.put("tsd.http.show_stack_trace", "true");
+    default_map.put("tsd.http.query.allow_delete", "false");
     default_map.put("tsd.http.request.enable_chunked", "false");
     default_map.put("tsd.http.request.max_chunk", "4096");
     default_map.put("tsd.http.request.cors_domains", "");
