@@ -213,7 +213,7 @@ public class QueryUtil {
    */
   public static void addId(final StringBuilder buf, final byte[] id) {
     for (final byte b : id) {
-      buf.append(String.format("\\x02x", b & 0xFF));
+      buf.append(String.format("\\x%02x", b & 0xFF));
     }
   }
 
